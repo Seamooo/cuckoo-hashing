@@ -8,6 +8,10 @@
 #define LOOPLIMIT 100
 #define RET_FAILURE EXIT_FAILURE
 #define RET_SUCCESS EXIT_SUCCESS
+//debug macros
+#define p() printf("here"); fflush(stdout);
+#define pint(x) printf("%s = %d\n", #x, x); fflush(stdout);
+#define pstr(x) printf("%s = %s\n", #x, x); fflush(stdout);
 
 struct bucket{
 	char *key;
@@ -220,14 +224,18 @@ void print_map(struct cuckoo_table *map)
 int lookup(struct cuckoo_table *map, const char *key, int *value_rv)
 {
 	int index = hash(key, map->table1.salt, map->table1.size);
-	if(strcmp(key, map->table1.buckets[index].key) == 0){
-		*value_rv = map->table1.buckets[index].value;
-		return RET_SUCCESS;
+	if(map->table1.buckets[index].used){
+		if(strcmp(key, map->table1.buckets[index].key) == 0){
+			*value_rv = map->table1.buckets[index].value;
+			return RET_SUCCESS;
+		}
 	}
 	index = hash(key, map->table2.salt, map->table2.size);
-	if(strcmp(key, map->table2.buckets[index].key) == 0){
-		*value_rv = map->table2.buckets[index].value;
-		return RET_SUCCESS;
+	if(map->table2.buckets[index].used){
+		if(strcmp(key, map->table2.buckets[index].key) == 0){
+			*value_rv = map->table2.buckets[index].value;
+			return RET_SUCCESS;
+		}
 	}
 	return RET_FAILURE;
 }
