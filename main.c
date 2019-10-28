@@ -3,8 +3,11 @@
 #include <string.h>
 #include <time.h>
 #include <stdbool.h>
+#include <errno.h>
 
 #define LOOPLIMIT 100
+#define RET_FAILURE EXIT_FAILURE
+#define RET_SUCCESS EXIT_SUCCESS
 
 struct bucket{
 	char *key;
@@ -203,14 +206,30 @@ void print_map(struct cuckoo_table *map)
 		}
 	}
 	for(int i = 0; i < map->table2.size; ++i){
-		if(!first)
+		if(map->table2.buckets[i].used){
+			if(!first)
 				printf(", ");
 			else
 				first = false;
-		if(map->table2.buckets[i].used)
 			printf("\"%s\":%d", map->table2.buckets[i].key, map->table2.buckets[i].value);
+		}
 	}
 	printf("}\n");
+}
+
+int lookup(struct cuckoo_table *map, const char *key, int *value_rv)
+{
+	int index = hash(key, map->table1.salt, map->table1.size);
+	if(strcmp(key, map->table1.buckets[index].key) == 0){
+		*value_rv = map->table1.buckets[index].value;
+		return RET_SUCCESS;
+	}
+	index = hash(key, map->table2.salt, map->table2.size);
+	if(strcmp(key, map->table2.buckets[index].key) == 0){
+		*value_rv = map->table2.buckets[index].value;
+		return RET_SUCCESS;
+	}
+	return RET_FAILURE;
 }
 
 int main(int argc, char *argv[])
@@ -218,9 +237,28 @@ int main(int argc, char *argv[])
 	srand(time(NULL));
 	//hashtable implemented hashes string keys to integer values
 	//close to map<string,int>
-	struct cuckoo_table hashmap;
-	init_cuckoo_table(&hashmap);
+	struct cuckoo_table map;
+	init_cuckoo_table(&map);
 	//remember to figure out how to free memory properly
-	print_map(&hashmap);
+	//print_map(&map);
+	//need to handle duplicate keys case
+	char *keys[100];
+	for(int i = 0; i < 100; ++i){
+		keys[i] = malloc(20*sizeof(char));
+		sprintf(keys[i], "%d-key", i);
+		insert(&map, keys[i], i);
+	}
+	int ret_val;
+	for(int i = 0; i < 100; ++i){
+		if(lookup(&map, keys[i], &ret_val) == RET_FAILURE)
+			fprintf(stderr, "couldn't find key: %s\n", keys[i]);
+		else
+			printf("found {\"%s\":%d}\n", keys[i], ret_val);
+	}
+	if(lookup(&map, "no-key", &ret_val) == RET_FAILURE){
+		fprintf(stderr, "couldn't find key: no-key\n");
+	}
+	//insert(&map, "a-key", 1);
+	//print_map(&map);
 	exit(EXIT_SUCCESS);
 }
