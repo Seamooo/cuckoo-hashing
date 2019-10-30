@@ -9,7 +9,7 @@
 #define LOOPLIMIT 100
 #define BLOCKSIZE 64 //size in bytes
 #if (BLOCKSIZE % 64 != 0)
-#error BLOCKSIZE must be a multiple of 64
+#error BLOCKSIZE must be a multiple of 64 bytes
 #endif
 #define RET_FAILURE EXIT_FAILURE
 #define RET_SUCCESS EXIT_SUCCESS
@@ -19,7 +19,7 @@
 #define puint(x) printf("%s = %u\n", #x, x); fflush(stdout);
 #define pstr(x) printf("%s = %s\n", #x, x); fflush(stdout);
 #define phex(x, nbytes) printf("%s = ", #x); for(int _i = 0; _i < nbytes; ++_i){printf("%02hhx", ((char *)x)[_i]);} printf("\n");fflush(stdout);
-#define pbar() printf("--------------------------------------------------------------------------------\n");
+#define pbar() printf("--------------------------------------------------------------------------------\n");fflush(stdout);
 
 struct bucket{
 	char *key;
@@ -65,6 +65,18 @@ void init_cuckoo_table(struct cuckoo_table *map)
 	map->population = 0;
 	init_hashtable(&(map->table1), map->size);
 	init_hashtable(&(map->table2), map->size);
+}
+
+void del_cuckoo_table(struct cuckoo_table *map)
+{
+	for(int i = 0; i < map->table1.size; ++i)
+		if(map->table1.buckets[i].used)
+			free(map->table1.buckets[i].key);
+	free(map->table1.buckets);
+	for(int i = 0; i < map->table2.size; ++i)
+		if(map->table2.buckets[i].used)
+			free(map->table2.buckets[i].key);
+	free(map->table2.buckets);
 }
 
 int fast_exponentiation(int base, int power, int modulo)
@@ -145,9 +157,9 @@ int hash(const char *key, const char *salt, int modulo)
 		int temp = 0;
 		int index = 0;
 		for(int j = 0; j < BLOCKSIZE / 4; ++j){
-			uint32_t currint = ((hash_vals[key_buffer[i*BLOCKSIZE + j*4]]) + (hash_vals[key_buffer[i*BLOCKSIZE + j*4 + 1]]));
+			uint32_t currint = (((unsigned char)hash_vals[key_buffer[i*BLOCKSIZE + j*4]]) + ((unsigned char)hash_vals[key_buffer[i*BLOCKSIZE + j*4 + 1]]));
 			currint ^= hash_vals[(unsigned char)key_buffer[i*BLOCKSIZE + j*4 + 2]];
-			currint += hash_vals[key_buffer[i*BLOCKSIZE + j*4 + 3]];
+			currint += hash_vals[(unsigned char)key_buffer[i*BLOCKSIZE + j*4 + 3]];
 			//below switch statement needs to be changed if BLOCKSIZE > 64
 			switch(j / (BLOCKSIZE / 16)){
 			case 0:
@@ -326,7 +338,7 @@ int insert(struct cuckoo_table *map, char *key, int value)
 	map->population++;
 	bool inserted = false;
 	struct hashtable *table_to_insert = &(map->table1);
-	char *curr_key = key;
+	char *curr_key = strdup(key);
 	int curr_val = value;
 	while(!inserted){
 		for(int i = 0; i < LOOPLIMIT; ++i){
@@ -353,6 +365,33 @@ int insert(struct cuckoo_table *map, char *key, int value)
 		}
 	}
 	return RET_SUCCESS;
+}
+
+int delete(struct cuckoo_table *map, char *key)
+{
+	int index = hash(key, map->table1.salt, map->table1.size);
+	if(map->table1.buckets[index].used){
+		if(strcmp(key, map->table1.buckets[index].key) == 0){
+			free(map->table1.buckets[index].key);
+			map->table1.buckets[index].used = false;
+			map->population--;
+			if(map->population < 0.3 * map->size && map->size > BUFSIZ)
+				decrease_size(map);
+			return RET_SUCCESS;
+		}
+	}
+	index = hash(key, map->table2.salt, map->table2.size);
+	if(map->table2.buckets[index].used){
+		if(strcmp(key, map->table2.buckets[index].key) == 0){
+			free(map->table2.buckets[index].key);
+			map->table2.buckets[index].used = false;
+			map->population--;
+			if(map->population < 0.3 * map->size && map->size > BUFSIZ)
+				decrease_size(map);
+			return RET_SUCCESS;
+		}
+	}
+	return RET_FAILURE;
 }
 
 void print_map(struct cuckoo_table *map)
@@ -388,21 +427,23 @@ int main(int argc, char *argv[])
 	//close to map<string,int>
 	struct cuckoo_table map;
 	init_cuckoo_table(&map);
-	//remember to figure out how to free memory properly
-	//print_map(&map);
-	int total_keys = 2000;
+	const int total_keys = 2000;
 	char *keys[total_keys];
 	for(int i = 0; i < total_keys; ++i){
 		keys[i] = malloc(20*sizeof(char));
 		sprintf(keys[i], "%d-key", i);
-		if(insert(&map, keys[i], i) == RET_FAILURE){
+		if(insert(&map, keys[i], i) == RET_FAILURE)
 			fprintf(stderr, "could not insert key %s\n", keys[i]);
-		}
 	}
-	//print_map(&map);
 	int ret_val;
 	for(int i = 0; i < 20; ++i){
 		int key_index = rand() % total_keys;
+		if(rand() % 5 == 0){
+			if(delete(&map, keys[key_index]) == RET_FAILURE)
+				fprintf(stderr, "couldn't delete key: %s\n", keys[key_index]);
+			else
+				printf("deleted key: %s\n", keys[key_index]);
+		}
 		if(lookup(&map, keys[key_index], &ret_val) == RET_FAILURE)
 			fprintf(stderr, "couldn't find key: %s\n", keys[key_index]);
 		else
@@ -410,7 +451,8 @@ int main(int argc, char *argv[])
 	}
 	if(lookup(&map, "no-key", &ret_val) == RET_FAILURE)
 		fprintf(stderr, "couldn't find key: no-key\n");
-	//insert(&map, "a-key", 1);
-	//print_map(&map);
+	for(int i = 0; i < total_keys; ++i)
+		free(keys[i]);
+	del_cuckoo_table(&map);
 	exit(EXIT_SUCCESS);
 }
