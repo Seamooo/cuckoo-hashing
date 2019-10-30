@@ -79,21 +79,6 @@ void del_cuckoo_table(struct cuckoo_table *map)
 	free(map->table2.buckets);
 }
 
-int fast_exponentiation(int base, int power, int modulo)
-{
-	int i = 1;
-	int rv = 1;
-	int curr = base;
-	power >>= 1;
-	while(power != 0){
-		if(power & 1)
-			rv = (rv * curr) % modulo;
-		power >>= 1;
-		curr = (curr * curr) % modulo;
-	}
-	return rv;
-}
-
 int hash_vals[] = {
 	0x92DB44A2, 0x545A89FC, 0x1507F26C, 0x319D9FEF, 0xD65173C0, 0x974B16E7,
 	0xAA1EEA9E, 0x2DC514FF, 0x0FEF07D2, 0x9006B98D, 0x2467EE06, 0xE8E94BB8,
